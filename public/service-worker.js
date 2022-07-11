@@ -8,6 +8,7 @@ const FILES_TO_CACHE = [
 const APP_PREFIX = "BudgetTracker-";
 const VERSION = "version_01";
 const CACHE_NAME = APP_PREFIX + VERSION;
+const DATA_CACHE_NAME = "data-cache-" + VERSION;
 
 // Install the service worker
 self.addEventListener('install', function(evt) {
@@ -21,39 +22,54 @@ self.addEventListener('install', function(evt) {
   self.skipWaiting();
 });
 
-// Activate the service worker and remove old data from the cache
-self.addEventListener('activate', function(evt) {
-  evt.waitUntil(
-    caches.keys().then(keyList => {
+self.addEventListener("activate", function (e) {
+  e.waitUntil(
+    caches.keys().then(function (keyList) {
+      let cacheKeeplist = keyList.filter(function (key) {
+        return key.indexOf(APP_PREFIX);
+      });
+      cacheKeeplist.push(CACHE_NAME);
+
       return Promise.all(
-        keyList.map(key => {
-          if (key !== CACHE_NAME && key !== CACHE_NAME) {
-            console.log('Removing old cache data', key);
-            return caches.delete(key);
+        keyList.map(function (key, i) {
+          if (cacheKeeplist.indexOf(key) === -1) {
+            console.log("deleting cache : " + keyList[i]);
+            return caches.delete(keyList[i]);
           }
         })
       );
     })
   );
-
-  self.clients.claim();
 });
 
 // Intercept fetch requests
 self.addEventListener('fetch', function (e) {
   console.log('fetch request : ' + e.request.url)
+  if (e.request.url.includes('/api/')) {
+    e.respondWith(
+      caches.open(DATA_CACHE_NAME).then(cache => {
+        return fetch(e.request).then(response => {
+          if (response.status === 200) {
+            cache.put(e.request.url, response.clone());
+          }
+        
+          return response;
 
-  e.respondWith(
-    caches.match(e.request).then(function (request) {
-      if (request) {
-        console.log(' responding with cache: ' + e.request.url);
-        return request;
-      } else {
-        console.log('file is not cached, fetching : ' + e.request.url)
-        return fetch(e.request)
-      }
+        })
+          .catch(err => {
+            return cache.match(e.request)
+          })
+      })
+    )
+  }
+    // caches.match(e.request).then(function (request) {
+    //   if (request) {
+    //     console.log(' responding with cache: ' + e.request.url);
+    //     return request;
+    //   } else {
+    //     console.log('file is not cached, fetching : ' + e.request.url)
+    //     return fetch(e.request)
+    //   }
 
-    })
-
-  )
+    // })
 });
